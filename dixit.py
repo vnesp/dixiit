@@ -40,7 +40,7 @@ class Player:
 
     def chooseCard(self):
         while True:
-            card = int(input('{}, choose one of your card ({}): '.format(self.name, self.hand)))
+            card = int(input('{}, choose one of your cards ({}): '.format(self.name, self.hand)))
             if self.getCard(card):
                 return card
 
@@ -52,7 +52,7 @@ class Player:
         print()
 
 
-    def addScore(self, score):
+    def addPoints(self, score):
         self.score += score
 
 
@@ -78,6 +78,7 @@ class Deck:
 class Gallery:
 
     def __init__(self, host, players, playersByName):
+        print('Stage 1: Making association')
         self.host = host
         self.players = players
         self.playersByName = playersByName
@@ -86,8 +87,8 @@ class Gallery:
         self.cards[host.name] = self.hostcard
 
 
-    def choosePlayer(self):
-        name = input('Choose player who pushing card (name or number, 0 - end of making): ')
+    def choosePlayer(self, action):
+        name = input('Choose player who is {} (name or number, 0 - end of stage): '.format(action))
         if name == '' or name == '0':
             return 0
         if name in self.playersByName:
@@ -100,8 +101,8 @@ class Gallery:
         return self.players[index]
 
 
-    def debtors(self):
-        return set(self.playersByName.keys()).difference(set(self.cards.keys()))
+    def debtors(self, complete):
+        return set(self.playersByName.keys()).difference(set(complete))
 
 
     def getCards(self):
@@ -109,16 +110,17 @@ class Gallery:
 
 
     def pushCards(self):
+        print('Stage 2: Pushing cards to gallery')
         while True:
-            debtors = self.debtors()
+            debtors = self.debtors(self.cards.keys())
             print('Gallery:', self.cards)
             print('Debtors:', debtors)
-            player = self.choosePlayer()
+            player = self.choosePlayer('pushing card')
             if player is None:
                 print('Unknown player')
                 continue
             if player == 0:                
-                if len(debtors) == 0 or input('Are you sure (y/n)? ').lower() == 'y':
+                if len(debtors) == 0 or input("Some players don't push their cards. Are you sure (y/n)? ").lower() == 'y':
                     break
                 continue
             print('You have chosen', player.name)
@@ -133,7 +135,79 @@ class Gallery:
                 self.hostcard = card
 
 
-    # self.owners = dict(map(lambda item: (item[1], item[0]), self.cards.items()))
+    def chooseCard(self, name):
+        galleryCards = set(self.getCards())
+        card = self.cards.get(name)
+        if card is not None:
+            galleryCards.remove(card)
+        while True:
+            card = int(input('{}, choose one of gallery cards ({}): '.format(name, galleryCards)))
+            if card in galleryCards:
+                return card
+
+
+    def voting(self):
+        print('Stage 3: Voting')
+        self.votes = {}
+        while True:
+            debtors = self.debtors(self.votes.keys())
+            print('Votes:', self.votes)
+            print('Debtors:', debtors)
+            player = self.choosePlayer('sending vote')
+            if player is None:
+                print('Unknown player')
+                continue
+            if player == 0:                
+                if len(debtors) == 0 or input("Some players don't send their votes. Are you sure (y/n)? ").lower() == 'y':
+                    break
+                continue
+            print('You have chosen', player.name)
+            card = self.votes.get(player.name)
+            if card is not None:
+                print('Player {} have already voted for card {}'.format(player.name, card))
+                if input('Are you sure to change player vote (y/n)? ').lower() != 'y':
+                    continue
+            self.votes[player.name] = self.chooseCard(player.name)
+
+
+    def calcResults(self):
+        print('Stage 4: Calculating results')
+
+        self.results = {}
+        for name in self.playersByName.keys():
+            self.results[name] = {
+                'votes': [],
+                'score': 0
+            }
+
+        owners = {}
+        for name, card in self.cards.items():
+            owners[card] = name
+
+        hostResult = self.results[self.host.name]
+
+        for name, card in self.votes.items():
+            owner = owners[card]
+            self.results[owner]['votes'].append(name)
+
+        if len(hostResult['votes']) in {0, len(self.votes) - (self.host.name in self.votes)}:
+            for name in self.cards.keys():
+                self.results[name]['score'] = 2
+            hostResult['score'] = 0
+        else:
+            if self.host.name in self.votes:
+                hostResult['score'] = 3
+            for name in hostResult['votes']:
+                self.results[name]['score'] = 3
+
+        for name, result in self.results.items():
+            card = self.cards.get(name, '?')
+            votes = result['votes']
+            if name != self.host.name:
+                result['score'] += len(votes)
+            score = result['score']
+            print('{} (card {}) - {} votes {} - {} points'.format(name, card, len(votes), votes, score))
+            self.playersByName[name].addPoints(score)
 
 
 class Game:
@@ -154,15 +228,18 @@ class Game:
             self.round += 1
             self.printState()
             currentGallery = Gallery(self.host, self.players, self.playersByName)
+            print()
             currentGallery.pushCards()
-            galleryCards = set(currentGallery.getCards())
-            print(sorted(galleryCards))
-            break
-            """
-            self.voting()
-            self.calcResult()
-            """
-
+            galleryCards = list(currentGallery.getCards())
+            random.shuffle(galleryCards)
+            print('Gallery for players:', galleryCards)
+            print()
+            currentGallery.voting()
+            print('Voting:', currentGallery.votes)
+            print()
+            currentGallery.calcResults()
+            print()
+            self.giveCardsToEachPlayer()
 
     def createPlayers(self):
         self.players = []
